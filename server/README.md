@@ -3,7 +3,7 @@
 This is the backend service for the **Digital Life Lessons** platform.
 It provides secure REST APIs for lesson management, analytics, authentication, reporting, and admin controls.
 
----
+----
 
 ##  Backend Overview
 

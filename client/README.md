@@ -37,7 +37,7 @@ Digital Life Lessons is a full-stack web platform where users can share meaningf
 * Express.js
 * MongoDB
 
----
+-----
 
 ##  Core Sections
 
