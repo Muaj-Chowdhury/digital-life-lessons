@@ -1,0 +1,28 @@
+services:
+  backend:
+    build: ./server
+    ports:
+      - "3000:3000"
+    # Read the root .env file for runtime server variables
+    env_file:
+      - .env
+
+  frontend:
+    build:
+      context: ./client
+      args:
+        - VITE_apiKey=${VITE_apiKey}
+        - VITE_authDomain=${VITE_authDomain}
+        - VITE_projectId=${VITE_projectId}
+        - VITE_storageBucket=${VITE_storageBucket}
+        - VITE_messagingSenderId=${VITE_messagingSenderId}
+        - VITE_appId=${VITE_appId}
+        - VITE_IMGBB_API_KEY=${VITE_IMGBB_API_KEY}
+        - VITE_API_URL=http://localhost:3000
+    ports:
+      - "5173:80"
+    # Keeps environment context uniform
+    env_file:
+      - .env
+    depends_on:
+      - backend

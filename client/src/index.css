@@ -1,0 +1,142 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+/* src/index.css */
+@import "tailwindcss";
+
+@plugin "daisyui/theme" {
+  name: "lifelessonsLight";
+
+  /* 60% background */
+  --color-base-100: #E7F6F2;
+  --color-base-200: #D6ECE7;
+  --color-base-300: #C2E2DC;
+
+  /* text */
+  --color-base-content: #2C3333;
+
+  /* 30% surfaces */
+  --color-primary: #395B64;
+  --color-secondary: #5F848C;
+
+  /* 10% accent */
+  --color-accent: #A5C9CA;
+
+  /* semantic */
+  --color-info: #4DA3FF;
+  --color-success: #5BBE8A;
+  --color-warning: #F4C95D;
+  --color-error: #E57373;
+
+  /* gradients */
+--gradient-main: linear-gradient(135deg, #E7F6F2, #A5C9CA);
+  --gradient-accent: linear-gradient(90deg, #395B64, #5F848C);
+}
+@plugin "daisyui/theme" {
+  name: "lifelessonsDark";
+
+/* Deep Slate/Charcoal for the 60% background */
+  --color-base-100: #0F172A; /* Very dark navy */
+  --color-base-200: #1E293B; /* Slightly lighter navy */
+  --color-base-300: #334155; 
+  
+  --color-base-content: #F8FAFC; /* Light text for dark bg */
+
+  /* Vibrant colors that pop against dark backgrounds */
+  --color-primary: #5EEAD4;   /* Teal/Cyan */
+  --color-secondary: #94A3B8; 
+  --color-accent: #2DD4BF;
+
+  /* semantic */
+  --color-info: #6AB7FF;
+  --color-success: #6FD6A6;
+  --color-warning: #FFD166;
+  --color-error: #FF7B7B;
+
+  /* gradients */
+--gradient-main: linear-gradient(135deg, #1D2222, #2C3333);
+  --gradient-accent: linear-gradient(90deg, #A5C9CA, #7FD1C9);
+}
+
+@layer utilities {
+  /* Use this for Page Backgrounds or Hero sections */
+  .bg-gradient-main {
+    background: var(--gradient-main);
+  }
+
+  /* Use this for Buttons, Badges, or Accents */
+  .bg-gradient-accent {
+    background: var(--gradient-accent);
+  }
+  /* ADD THIS PART BELOW */
+  .text-gradient {
+    background-image: var(--gradient-accent);
+    background-clip: text;
+    -webkit-background-clip: text; /* Required for Safari/Chrome */
+    color: transparent;
+    display: inline-block; /* Ensures the gradient wraps correctly */
+  }
+
+  /* Pro UX: Smooth color transitions when switching themes */
+  * {
+    @apply transition-colors duration-300;
+  }
+}
+
+@plugin "daisyui" {
+  themes: light --default, dark --prefersdark;
+}
+
+/* Force the table NOT to stack on mobile */
+table {
+  display: table !important;
+}
+
+thead {
+  display: table-header-group !important;
+}
+
+tr {
+  display: table-row !important;
+}
+
+td, th {
+  display: table-cell !important;
+}
+
+/* Custom horizontal scrollbar for mobile */
+.custom-scrollbar::-webkit-scrollbar {
+  height: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+/* @layer components {
+  @media (max-width: 768px) {
+    table,
+    thead,
+    tbody,
+    th,
+    td,
+    tr {
+      display: block;
+      width: 100%;
+    }
+
+    .responsive-cell {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #eee;
+    }
+
+    .responsive-cell::before {
+      content: attr(data-label);
+      font-weight: 600;
+    }
+  }
+} */

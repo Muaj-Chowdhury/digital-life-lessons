@@ -1,0 +1,53 @@
+name: Build and Push Frontend Docker Image
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "client/**" # Only run when code inside the client directory changes
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+      
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        id: docker_build
+        uses: docker/build-push-action@v5
+        with:
+          context: ./client # Point directly to the client subfolder
+          file: ./client/Dockerfile # Explicitly state where the Dockerfile is located
+          push: true
+          tags: ${{ secrets.DOCKERHUB_USERNAME }}/digital-life-lessons-client:latest
+          build-args: |
+            VITE_apiKey=${{ secrets.VITE_apiKey }}
+            VITE_authDomain=${{ secrets.VITE_authDomain }}
+            VITE_projectId=${{ secrets.VITE_projectId }}
+            VITE_storageBucket=${{ secrets.VITE_storageBucket }}
+            VITE_messagingSenderId=${{ secrets.VITE_messagingSenderId }}
+            VITE_appId=${{ secrets.VITE_appId }}
+            VITE_IMGBB_API_KEY=${{ secrets.VITE_IMGBB_API_KEY }}
+            VITE_API_URL=https://digital-life-lessons-server-three.vercel.app
+
+      - name: Image digest
+        run: echo ${{ steps.docker_build.outputs.digest }}
+        
+        # [GitHub Secrets] 
+                #│
+                #▼ (via workflow build-args)
+           #[Dockerfile ARG] ──► [Dockerfile ENV]
+                              #│
+                              #▼ (via npm run build)
+                  #[Baked into /app/dist JS Files]
+                          #│
+                          #▼ (via COPY --from=builder)
+                  #[Served via Nginx Image] 
