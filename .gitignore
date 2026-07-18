@@ -10,3 +10,6 @@ server/.env
 # OS files
 .DS_Store
 Thumbs.db
+# Aider internal files & caches
+.aider*
+!.aider.conf.yml
