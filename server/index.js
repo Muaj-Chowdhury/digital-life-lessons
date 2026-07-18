@@ -94,7 +94,7 @@ app.use(
 app.use(express.json());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.kw3z4m2.mongodb.net/?appName=Cluster0`;
-
+// middleware
 // jwt middlewares
 const verifyJWT = async (req, res, next) => {
   const token = req?.headers?.authorization?.split(" ")[1];
