@@ -11,13 +11,14 @@ import saveLessons from "../../../assets/save-lessons.jpg";
 import "swiper/css";
 import "swiper/css/pagination";
 import { Link } from "react-router";
-
+//
 const slides = [
   {
     title: "Learn From Real Experiences",
     text: "Real stories that shape better decisions",
     image: realStories,
   },
+  
   {
     title: "Every Story Holds Wisdom",
     text: "Discover lessons shared by people worldwide",

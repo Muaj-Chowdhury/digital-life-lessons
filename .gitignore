@@ -13,3 +13,4 @@ Thumbs.db
 # Aider internal files & caches
 .aider*
 !.aider.conf.yml
+gemini 
