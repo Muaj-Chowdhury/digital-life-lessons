@@ -149,10 +149,47 @@ async function run() {
 
         /* ---------------- LESSONS ---------------- */
 
-        // Fetch by author (profile/dashboard queries)
+        // Fetch by author + sort by newest (profile/dashboard/my-lessons queries)
+        // Replaces redundant single-field authorEmail index
         await lessonsCollection.createIndex(
-          { authorEmail: 1 },
-          { name: "lesson_author_index" },
+          { authorEmail: 1, createdAt: -1 },
+          { name: "lesson_author_created_index" },
+        );
+
+        // Featured lessons query (Home page overview)
+        await lessonsCollection.createIndex(
+          { isFeatured: 1, visibility: 1, isDeleted: 1, updatedAt: -1 },
+          { name: "lesson_featured_home_index" },
+        );
+
+        // Most saved lessons query (Home page overview)
+        await lessonsCollection.createIndex(
+          { visibility: 1, isDeleted: 1, favoritesCount: -1 },
+          { name: "lesson_most_saved_index" },
+        );
+
+        // Public lessons page filtering + newest sort
+        await lessonsCollection.createIndex(
+          { visibility: 1, category: 1, tone: 1, createdAt: -1 },
+          { name: "lesson_public_filter_created_index" },
+        );
+
+        // Public lessons page filtering + popularity sort
+        await lessonsCollection.createIndex(
+          { visibility: 1, category: 1, tone: 1, favoritesCount: -1 },
+          { name: "lesson_public_filter_saved_index" },
+        );
+
+        // Similar lessons by category
+        await lessonsCollection.createIndex(
+          { category: 1, visibility: 1, createdAt: -1 },
+          { name: "lesson_category_similar_index" },
+        );
+
+        // Text search index for title and description keywords
+        await lessonsCollection.createIndex(
+          { title: "text", description: "text" },
+          { name: "lesson_text_search_index" },
         );
 
         // Growth chart queries
@@ -336,7 +373,7 @@ async function run() {
       res.send(result);
     });
 
-    // get all users for admin with searching and pagination and lessons created by indevisual user
+    // get all users for admin with searching and pagination and lessons created by individual user
     app.get("/admin/users", verifyJWT, verifyADMIN, async (req, res) => {
       const adminEmail = req.tokenEmail;
       const searchText = req.query.searchText || "";
