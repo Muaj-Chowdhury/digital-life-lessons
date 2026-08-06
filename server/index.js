@@ -84,7 +84,7 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173",
-      "https://digital-life-lessons-562ea.web.app",
+      "https://digital-life-lessons-sl2z.vercel.app",
     ],
     credentials: true,
   }),
