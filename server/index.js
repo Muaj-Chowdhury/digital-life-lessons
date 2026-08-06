@@ -26,7 +26,6 @@ let reportsCollection;
 
 const app = express();
 
-
 // 2. WEBHOOK MUST BE HERE (Before express.json())
 app.post(
   "/webhook",
@@ -119,7 +118,6 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   },
 });
-
 
 async function run() {
   try {
@@ -375,71 +373,97 @@ async function run() {
 
     // get all users for admin with searching and pagination and lessons created by individual user
     app.get("/admin/users", verifyJWT, verifyADMIN, async (req, res) => {
-      const adminEmail = req.tokenEmail;
-      const searchText = req.query.searchText || "";
-      const page = parseInt(req.query.page) || 1;
-      const limit = parseInt(req.query.limit) || 10;
-      const skip = (page - 1) * limit;
+      try {
+        const adminEmail = req.tokenEmail;
+        const searchText = req.query.searchText || "";
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
 
-      const matchStage = {
-        email: { $ne: adminEmail },
-        ...(searchText && {
-          $or: [
-            { name: { $regex: searchText, $options: "i" } },
-            { email: { $regex: searchText, $options: "i" } },
-          ],
-        }),
-      };
+        const matchStage = {
+          email: { $ne: adminEmail },
+          ...(searchText && {
+            $or: [
+              { name: { $regex: searchText, $options: "i" } },
+              { email: { $regex: searchText, $options: "i" } },
+            ],
+          }),
+        };
 
-      const result = await db
-        .collection("users")
-        .aggregate([
-          { $match: matchStage },
+        const result = await db
+          .collection("users")
+          .aggregate([
+            { $match: matchStage },
+            {
+              $facet: {
+                // Track 1: Handle pagination first (Super Fast)
+                data: [
+                  { $sort: { createdAt: -1 } },
+                  { $skip: skip },
+                  { $limit: limit },
+                  // JOIN AND COUNT ONLY FOR THE RELEVANT PAGE CARDS
+                  {
+                    $lookup: {
+                      from: "lessons",
+                      let: { userEmail: "$email" },
+                      pipeline: [
+                        {
+                          $match: {
+                            $expr: { $eq: ["$authorEmail", "$$userEmail"] },
+                          },
+                        },
+                        { $count: "count" },
+                      ],
+                      as: "lessonCountArray",
+                    },
+                  },
+                  {
+                    $addFields: {
+                      totalLessons: {
+                        $ifNull: [
+                          { $arrayElemAt: ["$lessonCountArray.count", 0] },
 
-          {
-            $lookup: {
-              from: "lessons",
-              localField: "email",
-              foreignField: "authorEmail",
-              as: "lessons",
+                          0,
+                        ],
+                      },
+                    },
+                  },
+                  {
+                    $project: {
+                      lessonCountArray: 0,
+                    },
+                  },
+                ],
+                // Track 2: Just count total records matching search filters
+                totalCount: [{ $count: "count" }],
+              },
             },
-          },
+          ])
+          .toArray();
 
-          {
-            $addFields: {
-              totalLessons: { $size: "$lessons" },
-            },
-          },
+        // Prevent crashes if database returns empty arrays
+        const users = result[0]?.data || [];
+        const total = result[0]?.totalCount[0]?.count || 0;
 
-          {
-            $project: {
-              lessons: 0,
-            },
-          },
-
-          {
-            $facet: {
-              data: [
-                { $sort: { createdAt: -1 } },
-                { $skip: skip },
-                { $limit: limit },
-              ],
-              totalCount: [{ $count: "count" }],
-            },
-          },
-        ])
-        .toArray();
-
-      const users = result[0].data;
-      const total = result[0].totalCount[0]?.count || 0;
-
-      res.send({
-        users,
-        total,
-        page,
-        totalPages: Math.ceil(total / limit),
-      });
+        res.send({
+          users,
+          total,
+          page,
+          totalPages: Math.ceil(total / limit),
+        });
+      } catch (error) {
+        console.error("Error fetching admin users:", error);
+        res.status(500).send({ message: "Internal server error" });
+      }
     });
+    /**┌─── Track 1: "totalCount" ───> Counts ALL matching users (e.g., 100 users)
+                      │
+Incoming Filtered ────┤
+     Users            │
+                      └─── Track 2: "data" ─────────> Pagination ($sort, $skip, $limit to get 10 users)
+                                                            │
+                                                      Only these 10 users go into the $lookup count! */
+
     // update user role by admin
     app.patch(
       "/admin/users/:id/role",
@@ -475,84 +499,80 @@ async function run() {
 
     //user dashboard overview
     app.get("/dashboard/overview", verifyJWT, async (req, res) => {
-      const email = req.query.email;
+      try {
+        const email = req.query.email;
+        if (!email)
+          return res.status(400).send({ message: "Email parameter required" });
 
-      const totalLessons = await lessonsCollection.countDocuments({
-        authorEmail: email,
-      });
+        // 1. Establish unified time ranges
+        const daysLimit = 7;
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - (daysLimit - 1));
+        startDate.setHours(0, 0, 0, 0);
 
-      const totalFavorites = await favoriteCollection.countDocuments({
-        userEmail: email,
-      });
+        // 2. Dispatch all async tasks to execute concurrently
+        const [totalLessons, totalFavorites, recentLessons, chartData] =
+          await Promise.all([
+            lessonsCollection.countDocuments({ authorEmail: email }),
+            favoriteCollection.countDocuments({ userEmail: email }),
+            lessonsCollection
+              .find({ authorEmail: email })
+              .sort({ createdAt: -1 })
+              .limit(5)
+              .toArray(),
+            lessonsCollection
+              .aggregate([
+                {
+                  $match: {
+                    authorEmail: email,
+                    // Ensure comparison works uniformly by storing or converting values cleanly
+                    createdAt: { $gte: startDate.toISOString() },
+                  },
+                },
+                {
+                  $group: {
+                    _id: {
+                      $dateToString: {
+                        format: "%Y-%m-%d",
+                        date: { $toDate: "$createdAt" },
+                        timezone: "Asia/Dhaka",
+                      },
+                    },
+                    count: { $sum: 1 },
+                  },
+                },
+                { $sort: { _id: 1 } },
+              ])
+              .toArray(),
+          ]);
 
-      const recentLessons = await lessonsCollection
-        .find({ authorEmail: email })
-        .sort({ createdAt: -1 })
-        .limit(5)
-        .toArray();
-
-      function getLastDays(n = 7) {
+        // 3. Build data pad tracking arrays
         const days = [];
-        for (let i = n - 1; i >= 0; i--) {
+        for (let i = daysLimit - 1; i >= 0; i--) {
           const d = new Date();
           d.setDate(d.getDate() - i);
-          days.push(d.toISOString().slice(0, 10)); // YYYY-MM-DD
+          days.push(d.toISOString().slice(0, 10));
         }
-        return days;
+
+        const map = chartData.reduce((acc, item) => {
+          acc[item._id] = item.count;
+          return acc;
+        }, {});
+
+        const finalChartData = days.map((day) => ({
+          date: day,
+          count: map[day] || 0,
+        }));
+
+        res.send({
+          stats: { totalLessons, totalFavorites },
+          recentLessons,
+          finalChartData,
+        });
+      } catch (error) {
+        console.error("Dashboard overview error:", error);
+        res.status(500).send({ message: "Internal server error" });
       }
-
-      // 2. Define our Time Range
-      const daysLimit = 7;
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - (daysLimit - 1));
-      startDate.setHours(0, 0, 0, 0); // Start from the beginning of the day
-
-      const chartData = await lessonsCollection
-        .aggregate([
-          {
-            $match: {
-              authorEmail: email, // Only get documents from the last 7 days
-              createdAt: { $gte: startDate.toISOString() },
-            },
-          },
-          {
-            $group: {
-              _id: {
-                $dateToString: {
-                  format: "%Y-%m-%d",
-                  date: { $toDate: "$createdAt" },
-                  timezone: "Asia/Dhaka",
-                },
-              },
-              count: { $sum: 1 },
-            },
-          },
-          { $sort: { _id: 1 } },
-          { $limit: 7 },
-        ])
-        .toArray();
-      //         [
-      //   { "_id": "2026-02-03", "count": 2 },
-      //   { "_id": "2026-02-05", "count": 1 }
-      // ]
-
-      const days = getLastDays(7);
-
-      const map = chartData.reduce((acc, item) => {
-        acc[item._id] = item.count;
-        return acc;
-      }, {});
-
-      const finalChartData = days.map((day) => ({
-        date: day,
-        count: map[day] || 0,
-      }));
-
-      res.send({
-        stats: { totalLessons, totalFavorites },
-        recentLessons,
-        finalChartData,
-      });
     });
 
     // lessons related api
@@ -645,52 +665,71 @@ async function run() {
     });
     // get favorite lessons  for user
     app.get("/favorites/:email", verifyJWT, async (req, res) => {
-      const email = req.params.email;
-      const { category, tone } = req.query;
-      const orConditions = [];
-      if (category && category !== "all") {
-        orConditions.push({ "lessonDetails.category": category });
-      }
-      if (tone && tone !== "all") {
-        orConditions.push({ "lessonDetails.tone": tone });
-      }
-      const favorites = await favoriteCollection
-        .aggregate([
-          {
-            // 1. Initial filter by user
-            $match: { userEmail: email },
-          },
+      try {
+        const email = req.params.email;
+        const { category, tone } = req.query;
 
-          {
-            // 3. Join with lessons collection
-            $lookup: {
-              from: "lessons",
-              localField: "lessonId",
-              foreignField: "_id",
-              as: "lessonDetails",
+        // 1. Build strict filters for the joined collection
+        const lessonMatchConditions = [];
+        if (category && category !== "all") {
+          lessonMatchConditions.push({ $eq: ["$category", category] });
+        }
+        if (tone && tone !== "all") {
+          lessonMatchConditions.push({ $eq: ["$tone", tone] });
+        }
+
+        const favorites = await favoriteCollection
+          .aggregate([
+            {
+              // Filter favorites by user immediately (Uses Index)
+              $match: { userEmail: email },
             },
-          },
-
-          { $unwind: "$lessonDetails" },
-
-          ...(orConditions.length > 0
-            ? [{ $match: { $or: orConditions } }]
-            : []),
-          {
-            // 6. Shape the output for your tabular display
-            $project: {
-              _id: 1,
-              lessonId: 1,
-              createdAt: 1,
-              title: "$lessonDetails.title",
-              category: "$lessonDetails.category",
-              tone: "$lessonDetails.tone",
-              image: "$lessonDetails.image",
+            {
+              // Optimized Lookup: Filter and Join simultaneously
+              $lookup: {
+                from: "lessons",
+                let: { favLessonId: "$lessonId" },
+                pipeline: [
+                  {
+                    $match: {
+                      $expr: {
+                        $and: [
+                          { $eq: ["$_id", "$$favLessonId"] },
+                          ...lessonMatchConditions, // Only joins if category/tone match!
+                        ],
+                      },
+                    },
+                  },
+                ],
+                as: "lessonDetails",
+              },
             },
-          },
-        ])
-        .toArray();
-      res.send(favorites);
+            {
+              // Filter out favorite records that didn't match the lesson criteria
+              $match: { "lessonDetails.0": { $exists: true } },
+            },
+            {
+              $unwind: "$lessonDetails",
+            },
+            {
+              $project: {
+                _id: 1,
+                lessonId: 1,
+                createdAt: 1,
+                title: "$lessonDetails.title",
+                category: "$lessonDetails.category",
+                tone: "$lessonDetails.tone",
+                image: "$lessonDetails.image",
+              },
+            },
+          ])
+          .toArray();
+
+        res.send(favorites);
+      } catch (error) {
+        console.error("Error fetching favorites:", error);
+        res.status(500).send({ message: "Internal server error" });
+      }
     });
 
     // update lesson info for user
@@ -778,13 +817,6 @@ async function run() {
         updatedDoc,
       );
 
-      console.log(
-        "userEmail and lesson id and isLiked and result",
-        userEmail,
-        id,
-        isLiked,
-        result,
-      );
       const updatedLesson = await lessonsCollection.findOne({
         _id: new ObjectId(id),
       });
@@ -1067,44 +1099,66 @@ async function run() {
       verifyJWT,
       verifyADMIN,
       async (req, res) => {
-        const lessons = await lessonsCollection
-          .aggregate([
-            {
-              $match: { reportCount: { $gt: 0 } },
-            },
-            {
-              $lookup: {
-                from: "reports",
-                localField: "_id",
-                foreignField: "lessonId",
-                as: "lessonReports",
+        try {
+          const lessons = await lessonsCollection
+            .aggregate([
+              {
+                // 1. Initial entry filter using indexed fields
+                $match: { reportCount: { $gt: 0 } },
               },
-            },
-            {
-              $match: { "lessonReports.status": "pending" },
-            },
-
-            {
-              $project: {
-                title: 1,
-                reportCount: 1,
-                authorEmail: 1,
-                reportCount: 1,
-                createdAt: 1,
-                // Extract specific fields from the first item in the joined array
-                reason: { $arrayElemAt: ["$lessonReports.reason", 0] },
-                reporterEmail: {
-                  $arrayElemAt: ["$lessonReports.reporterEmail", 0],
+              {
+                // 2. Optimized Lookup: Search and filter reports simultaneously
+                $lookup: {
+                  from: "reports",
+                  let: { targetLessonId: "$_id" },
+                  pipeline: [
+                    {
+                      $match: {
+                        $expr: {
+                          $and: [
+                            { $eq: ["$lessonId", "$$targetLessonId"] },
+                            { $eq: ["$status", "pending"] }, // Filters directly on the disk!
+                          ],
+                        },
+                      },
+                    },
+                  ],
+                  as: "pendingReports",
                 },
               },
-            },
-            { $sort: { reportCount: -1 } },
-          ])
-          .toArray();
+              {
+                // 3. Drop lessons that do not have any ACTIVE pending reports
+                $match: { "pendingReports.0": { $exists: true } },
+              },
+              {
+                // 4. Shape cleaner output payload
+                $project: {
+                  title: 1,
+                  reportCount: 1,
+                  authorEmail: 1,
+                  createdAt: 1,
+                  // Accurately extracts values specifically from pending reports
+                  reason: { $arrayElemAt: ["$pendingReports.reason", 0] },
+                  reporterEmail: {
+                    $arrayElemAt: ["$pendingReports.reporterEmail", 0],
+                  },
+                },
+              },
+              {
+                // 5. Order list by the highest volume of reports
+                $sort: { reportCount: -1 },
+              },
+            ])
+            .toArray();
 
-        res.send(lessons);
+          res.send(lessons);
+        } catch (error) {
+          console.error("Error fetching reported lessons:", error);
+          res.status(500).send({ message: "Internal server error" });
+        }
       },
     );
+
     // get reports for any lessons
     app.get("/admin/reports/:id", verifyJWT, verifyADMIN, async (req, res) => {
       const lessonId = new ObjectId(req.params.id);
@@ -1119,14 +1173,26 @@ async function run() {
 
     // update lesson reports status
     app.patch(
-      "/admin/report/status/:id",
-      verifyJWT,
-      verifyADMIN,
-      async (req, res) => {
-        const lessonId = new ObjectId(req.params.id);
-        const { status } = req.body; // e.g., { "status": "resolved/ignored"}
-        const adminEmail = req.tokenEmail;
+  "/admin/report/status/:id",
+  verifyJWT,
+  verifyADMIN,
+  async (req, res) => {
+    // Start an atomic database session
+    const session = client.startSession();
+    
+    try {
+      const lessonId = new ObjectId(req.params.id);
+      const { status } = req.body;  // e.g., { "status": "resolved/ignored"}
+      const adminEmail = req.tokenEmail;
 
+      if (!status) {
+        return res.status(400).send({ success: false, message: "Status parameter is required" });
+      }
+
+      // Execute both actions inside a managed ACID transaction
+      await session.withTransaction(async () => {
+        
+        // 1. Bulk update matching reports
         await reportsCollection.updateMany(
           { lessonId, status: "pending" },
           {
@@ -1136,34 +1202,56 @@ async function run() {
               handledAt: new Date(),
             },
           },
+          { session }
         );
 
-        // Square brackets enable aggregation pipeline for updates
-        await lessonsCollection.updateOne({ _id: lessonId }, [
+        // 2. Optimized static update on the lesson record (Removed aggregate overhead)
+        await lessonsCollection.updateOne(
+          { _id: lessonId },
           {
-            // Stage 1: Update the flag first
             $set: {
               reportCount: 0,
               isReviewed: true,
+              reviewedBy: adminEmail,
+              updatedAt: new Date() // Keeping timestamps accurate
             },
           },
-          {
-            // Stage 2: Reference the flag updated in Stage 1
-            $set: {
-              reviewedBy: {
-                $cond: {
-                  if: { $eq: ["$isReviewed", true] },
-                  then: adminEmail,
-                  else: null,
-                },
-              },
-            },
-          },
-        ]);
+          { session }
+        );
+      });
+      // // Square brackets enable aggregation pipeline for updates
+      //   await lessonsCollection.updateOne({ _id: lessonId }, [
+      //     {
+      //       // Stage 1: Update the flag first
+      //       $set: {
+      //         reportCount: 0,
+      //         isReviewed: true,
+      //       },
+      //     },
+      //     {
+      //       // Stage 2: Reference the flag updated in Stage 1
+      //       $set: {
+      //         reviewedBy: {
+      //           $cond: {
+      //             if: { $eq: ["$isReviewed", true] },
+      //             then: adminEmail,
+      //             else: null,
+      //           },
+      //         },
+      //       },
+      //     },
+      //   ]);
 
-        res.send({ success: true });
-      },
-    );
+      res.send({ success: true, message: "Reports handled and lesson status reset successfully." });
+    } catch (error) {
+      console.error("Failed to update report status transaction:", error);
+      res.status(500).send({ success: false, message: "Internal server error" });
+    } finally {
+      await session.endSession();
+    }
+  },
+);
+
     // delete lesson and all related reports by admin
     app.delete(
       "/admin/report/delete/:id",

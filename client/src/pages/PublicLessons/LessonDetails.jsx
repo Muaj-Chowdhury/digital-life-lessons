@@ -66,6 +66,7 @@ const LessonDetails = () => {
   const { data: isPremium } = useQuery({
     queryKey: ["user-access", user?.email],
 
+    // Fetch user access level from the server
     queryFn: async () => {
       if (!user?.email) return null;
 
@@ -87,7 +88,7 @@ const LessonDetails = () => {
     isError,
   } = useQuery({
     queryKey: ["lessonData", id, user?.email],
-
+    
     queryFn: async () => {
       const res = await axiosSecure(`/lesson/${id}?userEmail=${user?.email}`);
 

@@ -10,6 +10,12 @@ server/.env
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local chat/export files
+chat_history.json
+chat.html
+chat.md
+structure.txt
 # Aider internal files & caches
 .aider*
 !.aider.conf.yml

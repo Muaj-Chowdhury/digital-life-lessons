@@ -18,7 +18,7 @@ const slides = [
     text: "Real stories that shape better decisions",
     image: realStories,
   },
-  
+
   {
     title: "Every Story Holds Wisdom",
     text: "Discover lessons shared by people worldwide",
