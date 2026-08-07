@@ -18,13 +18,58 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
-let usersCollection;
-let lessonsCollection;
-let favoriteCollection;
-let commentsCollection;
-let reportsCollection;
-
 const app = express();
+
+// Modify your MongoDB URI connection options string like this:
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.kw3z4m2.mongodb.net/?appName=Cluster0&maxPoolSize=1&maxIdleTimeMS=5000`;
+const client = new MongoClient(uri, {
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  },
+});
+// Global collection references (Your 40 APIs rely on these variables)
+let usersCollection, lessonsCollection, favoriteCollection, commentsCollection, reportsCollection, db;
+
+// Track if indexes have been created to prevent redundant runs in serverless environments
+let indicesCreated = false; 
+
+// Update your middleware block to match this layout precisely:
+app.use(async (req, res, next) => {
+  try {
+    if (usersCollection && lessonsCollection) {
+      return next(); // Connections already live, move forward instantly
+    }
+    
+    await client.connect();
+    db = client.db("digitalLifeLessons");
+    
+    usersCollection = db.collection("users");
+    lessonsCollection = db.collection("lessons");
+    favoriteCollection = db.collection("favorites");
+    commentsCollection = db.collection("comments");
+    reportsCollection = db.collection("reports");
+    
+    // 🔥 SAFE SERVERLESS INDEX RUNNER
+    // This guarantees the database is 100% connected before indexing starts,
+    // and the tracking variable prevents it from running more than once per container instance.
+    if (!indicesCreated) {
+      console.log("⚙️ Initializing database indexes...");
+      await setupDatabase();
+      indicesCreated = true;
+      console.log("✅ Database indexes created successfully");
+    }
+    
+    next();
+  } catch (error) {
+    console.error("❌ Database connection error:", error);
+    res.status(500).json({ error: "Database initialization failed" });
+  }
+});
+
+
+
 
 // 2. WEBHOOK MUST BE HERE (Before express.json())
 app.post(
@@ -92,9 +137,8 @@ app.use(
 
 app.use(express.json());
 
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.kw3z4m2.mongodb.net/?appName=Cluster0`;
-// middleware
-// jwt middlewares
+// middlewares
+// jwt middleware
 const verifyJWT = async (req, res, next) => {
   const token = req?.headers?.authorization?.split(" ")[1];
   if (!token) return res.status(401).send({ message: "Unauthorized Access!" });
@@ -110,25 +154,6 @@ const verifyJWT = async (req, res, next) => {
   }
 };
 
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
-const client = new MongoClient(uri, {
-  serverApi: {
-    version: ServerApiVersion.v1,
-    strict: true,
-    deprecationErrors: true,
-  },
-});
-
-async function run() {
-  try {
-    // Send a ping to confirm a successful connection
-
-    const db = client.db("digitalLifeLessons");
-    usersCollection = db.collection("users");
-    lessonsCollection = db.collection("lessons");
-    favoriteCollection = db.collection("favorites");
-    commentsCollection = db.collection("comments");
-    reportsCollection = db.collection("reports");
 
     // 3 Setup Database Indexes (Inside run)
     const setupDatabase = async () => {
@@ -256,8 +281,7 @@ async function run() {
       }
     };
 
-    // 4. Run it immediately
-    await setupDatabase();
+
 
     // role middlewares
     const verifyADMIN = async (req, res, next) => {
@@ -1567,16 +1591,18 @@ Incoming Filtered ────┤
         res.status(500).send({ error: true });
       }
     });
-  } finally {
-    // Ensures that the client will close when you finish/error
-  }
-}
-run().catch(console.dir);
+
+
 
 app.get("/", (req, res) => {
-  res.send("Hello from Server..Lol");
+  res.send("Hello from Server!");
 });
 
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
-});
+// 6. Conditional local listener & Vercel Export
+if (process.env.NODE_ENV !== "production") {
+  app.listen(port, () => {
+    console.log(`Server running locally on port ${port}`);
+  });
+}
+
+module.exports = app; // Exposes Express to Vercel's serverless pipeline
