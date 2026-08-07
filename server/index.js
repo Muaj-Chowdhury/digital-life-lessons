@@ -69,8 +69,6 @@ app.use(async (req, res, next) => {
 });
 
 
-
-
 // 2. WEBHOOK MUST BE HERE (Before express.json())
 app.post(
   "/webhook",
