@@ -1,6 +1,6 @@
 # Digital Life Lessons Platform
 
-**Live Site:** https://digital-life-lessons-562ea.web.app/
+**Live Site:** https://digital-life-lessons-sl2z.vercel.app/
 
 A comprehensive, production-grade community-driven platform for sharing real-life experiences, career insights, personal growth milestones, and lessons learned. Rather than focusing solely on academic knowledge, Digital Life Lessons enables users to document and discover practical wisdom gained through real-world experiences.
 
