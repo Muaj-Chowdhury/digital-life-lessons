@@ -20,60 +20,41 @@ admin.initializeApp({
 
 const app = express();
 
-// Modify your MongoDB URI connection options string like this:
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.kw3z4m2.mongodb.net/?appName=Cluster0&maxPoolSize=5&maxIdleTimeMS=60000`;
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.kw3z4m2.mongodb.net/?appName=Cluster0&maxPoolSize=5`;
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
   },
+  connectTimeoutMS: 10000,
+  socketTimeoutMS: 45000,
 });
-// Global collection references (Your 40 APIs rely on these variables)
-let usersCollection,
-  lessonsCollection,
-  favoriteCollection,
-  commentsCollection,
-  reportsCollection,
-  db;
 
-// Track if indexes have been created to prevent redundant runs in serverless environments
-let indicesCreated = false;
+let db = null;
+let usersCollection = null;
+let lessonsCollection = null;
+let favoriteCollection = null;
+let commentsCollection = null;
+let reportsCollection = null;
 
-// Update your middleware block to match this layout precisely:
-app.use(async (req, res, next) => {
-  try {
-    if (usersCollection && lessonsCollection) {
-      return next(); // Connections already live, move forward instantly
-    }
-
-    await client.connect();
-    db = client.db("digitalLifeLessons");
-
-    usersCollection = db.collection("users");
-    lessonsCollection = db.collection("lessons");
-    favoriteCollection = db.collection("favorites");
-    commentsCollection = db.collection("comments");
-    reportsCollection = db.collection("reports");
-
-    // 🔥 SAFE SERVERLESS INDEX RUNNER
-    // Trigger index checks asynchronously so it does NOT block the cold-start request.
-    if (!indicesCreated) {
-      indicesCreated = true;
-      console.log("⚙️ Initializing database indexes in background...");
-      setupDatabase().then(() => {
-        console.log("✅ Database indexes created successfully");
-      }).catch((err) => {
-        console.error(" Index creation warning:", err.message);
-      });
-    }
-
-    next();
-  } catch (error) {
-    console.error("❌ Database connection error:", error);
-    res.status(500).json({ error: "Database initialization failed" });
+const initializeDatabase = async () => {
+  // Cached for the life of this serverless instance.
+  if (db) {
+    return db;
   }
-});
+
+  await client.connect();
+  db = client.db("digitalLifeLessons");
+
+  usersCollection = db.collection("users");
+  lessonsCollection = db.collection("lessons");
+  favoriteCollection = db.collection("favorites");
+  commentsCollection = db.collection("comments");
+  reportsCollection = db.collection("reports");
+
+  return db;
+};
 
 // 2. WEBHOOK MUST BE HERE (Before express.json())
 app.post(
@@ -99,10 +80,14 @@ app.post(
       console.error("❌ Verification Failed:", err.message);
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
-    // 2. Ensure DB is connected (Important for Vercel!)
-    if (!usersCollection) {
-      const db = client.db("digitalLifeLessons");
-      usersCollection = db.collection("users");
+
+    try {
+      await initializeDatabase();
+    } catch (error) {
+      console.error("❌ Webhook DB initialization failed:", error);
+      return res
+        .status(500)
+        .send({ error: "Webhook database initialization failed" });
     }
 
     if (event.type === "checkout.session.completed") {
@@ -128,10 +113,11 @@ app.post(
     res.json({ received: true });
   },
 );
-// middleware
+
 app.use(
   cors({
     origin: [
+      "http://localhost:5173",
       "http://localhost:5174",
       "https://digital-life-lessons-sl2z.vercel.app",
     ],
@@ -140,6 +126,19 @@ app.use(
 );
 
 app.use(express.json());
+
+// database middleware
+app.use(async (req, res, next) => {
+  try {
+    await initializeDatabase();
+    next();
+  } catch (error) {
+    console.error("❌ Database initialization failed:", error);
+    res.status(500).json({
+      error: "Database initialization failed",
+    });
+  }
+});
 
 // middlewares
 // jwt middleware
@@ -155,138 +154,6 @@ const verifyJWT = async (req, res, next) => {
   } catch (err) {
     console.log(err);
     return res.status(401).send({ message: "Unauthorized Access!", err });
-  }
-};
-
-// 3 Setup Database Indexes (Inside run)
-const setupDatabase = async () => {
-  try {
-    /* ---------------- USERS ---------------- */
-    await usersCollection.createIndex(
-      { email: 1 },
-      { unique: true, name: "unique_user_email" },
-    );
-
-    // Dashboard growth chart
-    await usersCollection.createIndex(
-      { createdAt: 1 },
-      { name: "users_createdAt_index" },
-    );
-
-    /* ---------------- LESSONS ---------------- */
-
-    // Fetch by author + sort by newest (profile/dashboard/my-lessons queries)
-    // Replaces redundant single-field authorEmail index
-    await lessonsCollection.createIndex(
-      { authorEmail: 1, createdAt: -1 },
-      { name: "lesson_author_created_index" },
-    );
-
-    // Featured lessons query (Home page overview)
-    await lessonsCollection.createIndex(
-      { isFeatured: 1, visibility: 1, isDeleted: 1, updatedAt: -1 },
-      { name: "lesson_featured_home_index" },
-    );
-
-    // Most saved lessons query (Home page overview)
-    await lessonsCollection.createIndex(
-      { visibility: 1, isDeleted: 1, favoritesCount: -1 },
-      { name: "lesson_most_saved_index" },
-    );
-
-    // Public lessons page filtering + newest sort
-    await lessonsCollection.createIndex(
-      { visibility: 1, category: 1, tone: 1, createdAt: -1 },
-      { name: "lesson_public_filter_created_index" },
-    );
-
-    // Soft-delete aware listing index for active lessons and trash views
-    await lessonsCollection.createIndex(
-      { existStatus: 1, createdAt: -1 },
-      { name: "lesson_status_created_index" },
-    );
-
-    // Public lessons page filtering + popularity sort
-    await lessonsCollection.createIndex(
-      { visibility: 1, category: 1, tone: 1, favoritesCount: -1 },
-      { name: "lesson_public_filter_saved_index" },
-    );
-
-    // Similar lessons by category
-    await lessonsCollection.createIndex(
-      { category: 1, visibility: 1, createdAt: -1 },
-      { name: "lesson_category_similar_index" },
-    );
-
-    // Text search index for title and description keywords
-    await lessonsCollection.createIndex(
-      { title: "text", description: "text" },
-      { name: "lesson_text_search_index" },
-    );
-
-    // Growth chart queries
-    await lessonsCollection.createIndex(
-      { createdAt: 1 },
-      { name: "lesson_createdAt_index" },
-    );
-
-    // Admin review + moderation queries
-    await lessonsCollection.createIndex(
-      { isReviewed: 1, isDeleted: 1 },
-      { name: "lesson_review_status_index" },
-    );
-
-    // Reports filtering
-    await lessonsCollection.createIndex(
-      { reportCount: -1 },
-      { name: "lesson_report_sort_index" },
-    );
-
-    // Soft-delete optimized queries (partial index)
-    await lessonsCollection.createIndex(
-      { isDeleted: 1, deletedAt: 1 },
-      {
-        partialFilterExpression: { isDeleted: true },
-        name: "lesson_deleted_partial_index",
-      },
-    );
-
-    /* ---------------- FAVORITES ---------------- */
-
-    // Prevent duplicate favorites
-    await favoriteCollection.createIndex(
-      { userEmail: 1, lessonId: 1 },
-      { unique: true, name: "unique_user_favorite" },
-    );
-
-    // Most saved lessons ranking
-    await favoriteCollection.createIndex(
-      { lessonId: 1 },
-      { name: "favorite_lesson_lookup" },
-    );
-
-    /* ---------------- COMMENTS ---------------- */
-
-    await commentsCollection.createIndex(
-      { lessonId: 1, createdAt: -1 },
-      { name: "comments_lesson_sort_index" },
-    );
-
-    /* ---------------- REPORTS ---------------- */
-
-    await reportsCollection.createIndex(
-      { lessonId: 1 },
-      { name: "reports_lesson_lookup" },
-    );
-
-    await reportsCollection.createIndex(
-      { status: 1 },
-      { name: "reports_status_index" },
-    );
-
-    console.log(" Database indexes initialized successfully");
-  } catch (err) {
-    console.error(" Index creation warning:", err.message);
   }
 };
 
