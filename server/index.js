@@ -57,13 +57,15 @@ app.use(async (req, res, next) => {
     reportsCollection = db.collection("reports");
 
     // 🔥 SAFE SERVERLESS INDEX RUNNER
-    // This guarantees the database is 100% connected before indexing starts,
-    // and the tracking variable prevents it from running more than once per container instance.
+    // Trigger index checks asynchronously so it does NOT block the cold-start request.
     if (!indicesCreated) {
-      console.log("⚙️ Initializing database indexes...");
-      await setupDatabase();
       indicesCreated = true;
-      console.log("✅ Database indexes created successfully");
+      console.log("⚙️ Initializing database indexes in background...");
+      setupDatabase().then(() => {
+        console.log("✅ Database indexes created successfully");
+      }).catch((err) => {
+        console.error(" Index creation warning:", err.message);
+      });
     }
 
     next();
