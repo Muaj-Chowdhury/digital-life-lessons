@@ -12,7 +12,7 @@ import {
 import { LuBookOpenCheck, LuBookOpenText } from "react-icons/lu";
 import { GrLogout } from "react-icons/gr";
 import { HiUserGroup } from "react-icons/hi2";
-import { Flag, ChevronLeft, Sparkles } from "lucide-react";
+import { Flag, ChevronLeft, Sparkles, Trash2 } from "lucide-react";
 import SidebarItem from "./SidebarItem";
 import useRole from "../../../hooks/useRole";
 import useAuth from "../../../hooks/useAuth";
@@ -123,6 +123,13 @@ const Sidebar = () => {
             collapsed={collapsed && !isMobile}
             onClick={() => isMobile && setMobileOpen(false)}
           />
+          <SidebarItem
+            to="/dashboard/admin/trash-lessons"
+            icon={<Trash2 size={18} />}
+            label="Trash Bin"
+            collapsed={collapsed && !isMobile}
+            onClick={() => isMobile && setMobileOpen(false)}
+          />
         </>
       )}
 
@@ -143,7 +150,7 @@ const Sidebar = () => {
             onClick={toggleTheme}
             className="w-full flex items-center gap-3 p-3 rounded-xl transition-all text-base-content/60 hover:bg-base-200"
           >
-            <span className="text-xl flex-shrink-0">
+            <span className="text-xl shrink-0">
               {theme === "lifelessonsDark" ? <BsSun /> : <BsMoon />}
             </span>
             {(!collapsed || isMobile) && (
@@ -153,13 +160,15 @@ const Sidebar = () => {
         </div>
       </li>
 
-      {role === "admin" && <SidebarItem
-        to={"/dashboard/admin/profile"}
-        icon={<FaUserShield />}
-        label="Admin Profile Settings"
-        collapsed={collapsed && !isMobile}
-        onClick={() => isMobile && setMobileOpen(false)}
-      />}
+      {role === "admin" && (
+        <SidebarItem
+          to={"/dashboard/admin/profile"}
+          icon={<FaUserShield />}
+          label="Admin Profile Settings"
+          collapsed={collapsed && !isMobile}
+          onClick={() => isMobile && setMobileOpen(false)}
+        />
+      )}
       <SidebarItem
         to={"/dashboard/profile"}
         icon={<FaUser />}
@@ -177,7 +186,7 @@ const Sidebar = () => {
             onClick={logOut}
             className="w-full flex items-center gap-3 p-3 rounded-xl transition-all text-error hover:bg-error/10"
           >
-            <span className="text-xl flex-shrink-0">
+            <span className="text-xl shrink-0">
               <GrLogout />
             </span>
             {(!collapsed || isMobile) && (
@@ -220,13 +229,13 @@ const Sidebar = () => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setMobileOpen(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[80]"
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-80"
             />
             <motion.aside
               initial={{ x: "-100%" }}
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
-              className="fixed inset-y-0 left-0 w-72 bg-base-100 z-[90] overflow-y-auto"
+              className="fixed inset-y-0 left-0 w-72 bg-base-100 z-90 overflow-y-auto"
             >
               <div className="p-6 border-b flex justify-between items-center">
                 <div className="flex items-center">
@@ -247,7 +256,7 @@ const Sidebar = () => {
 
       {/* DESKTOP UI */}
       <aside
-        className={`hidden md:flex flex-col sticky top-0 h-screen bg-base-100  border-r border-base-300 transition-all duration-500 z-[70] ${collapsed ? "w-20" : "w-72"}`}
+        className={`hidden md:flex flex-col sticky top-0 h-screen bg-base-100  border-r border-base-300 transition-all duration-500 z-70 ${collapsed ? "w-20" : "w-72"}`}
       >
         <div className="flex items-center justify-between h-20 px-6 border-b shrink-0">
           {!collapsed && (

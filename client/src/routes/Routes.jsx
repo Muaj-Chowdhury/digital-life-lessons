@@ -23,6 +23,7 @@ import AdminDashboard from "../pages/dashboard/Admin/AdminDashboard/AdminDashboa
 import AdminRoute from "./AdminRoute";
 import NotFound from "../component/shared/NotFound";
 import PaymentCancel from "../pages/Payment/PaymentCancel";
+import TrashLessons from "../pages/dashboard/Admin/TrashLessons/TrashLessons";
 
 const router = createBrowserRouter([
   {
@@ -166,6 +167,16 @@ const router = createBrowserRouter([
               <PrivateRoute>
                 <AdminRoute>
                   <ReportedLessons />
+                </AdminRoute>
+              </PrivateRoute>
+            ),
+          },
+          {
+            path: "trash-lessons",
+            element: (
+              <PrivateRoute>
+                <AdminRoute>
+                  <TrashLessons />
                 </AdminRoute>
               </PrivateRoute>
             ),
